@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "src/liquidium_test_backend"
+]
+resolver = "2"

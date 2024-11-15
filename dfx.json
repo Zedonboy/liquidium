@@ -1,0 +1,24 @@
+{
+  "canisters": {
+    "liquidium_test_backend": {
+      "candid": "src/liquidium_test_backend/liquidium_test_backend.did",
+      "package": "liquidium_test_backend",
+      "type": "rust"
+    }
+  },
+  "defaults": {
+    "bitcoin": {
+      "enabled": true,
+      "log_level": "info",
+      "nodes": [
+        "127.0.0.1:18444"
+      ]
+    },
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "output_env_file": ".env",
+  "version": 1
+}
