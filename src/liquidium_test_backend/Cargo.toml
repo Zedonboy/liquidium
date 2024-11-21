@@ -10,5 +10,17 @@ crate-type = ["cdylib"]
 
 [dependencies]
 candid = "0.10"
-ic-cdk = "0.13"
-ic-cdk-timers = "0.7" # Feel free to remove this dependency if you don't need timers
+ic-cdk = "0.17.0"
+ic-cdk-timers = "0.11.0" # Feel free to remove this dependency if you don't need timers
+hex = "0.4.3"
+bitcoin = "0.32.3"
+serde = { version = "1", features = ["derive"]}
+serde_json = "1.0.132"
+sha2 = "0.10.8"
+ciborium = "0.2.2"
+ciborium-io = "0.2.2"
+base64 = "0.22.1"
+ordinals = "=0.0.12"
+
+[dev-dependencies]
+pocket-ic = "5.0.0"

@@ -4,6 +4,17 @@
       "candid": "src/liquidium_test_backend/liquidium_test_backend.did",
       "package": "liquidium_test_backend",
       "type": "rust"
+    },
+    "internet_identity": {
+      "type": "custom",
+      "candid": "https://github.com/dfinity/internet-identity/releases/latest/download/internet_identity.did",
+      "wasm": "https://github.com/dfinity/internet-identity/releases/latest/download/internet_identity_dev.wasm.gz",
+      "remote": {
+        "id": {
+          "ic": "ahw5u-keaaa-aaaaa-qaaha-cai"
+        }
+      },
+      "frontend": {}
     }
   },
   "defaults": {

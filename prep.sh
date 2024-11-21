@@ -1,0 +1,1 @@
+cargo build --release --target wasm32-unknown-unknown --package liquidium_test_backend && cp target/wasm32-unknown-unknown/release/liquidium_test_backend.wasm src/bin && candid-extractor target/wasm32-unknown-unknown/release/liquidium_test_backend.wasm > src/liquidium_test_backend/liquidium_test_backend.did

@@ -1,3 +1,78 @@
+type Bundle = record {
+  id : text;
+  loan_trx : opt text;
+  address : text;
+  lender : principal;
+  txn_id : text;
+  amount : nat64;
+};
+type Collateral = record {
+  id : text;
+  owner : principal;
+  loan_trx : opt text;
+  address : text;
+  txn_id : text;
+  trx_hex : opt text;
+  amount : nat64;
+  rune_id : nat;
+};
+type HttpHeader = record { value : text; name : text };
+type HttpResponse = record {
+  status : nat;
+  body : blob;
+  headers : vec HttpHeader;
+};
+type LoanOffer = record {
+  id : text;
+  interest : float32;
+  term : nat32;
+  collateral : nat64;
+  liquidity_bundle_id : text;
+  lender : principal;
+  max_ltv : float32;
+  rune_id : nat;
+};
+type LoanRequest = record {
+  offer_id : text;
+  receive_addr : text;
+  collateral_id : text;
+};
+type LoanStatus = variant { PAID_BACK : text; PENDING; DEFAULTED : text };
+type LoanTransaction = record {
+  id : text;
+  ltv : float64;
+  sat_worth : nat64;
+  interest : float32;
+  bundle_id : text;
+  owner : principal;
+  created_at : nat64;
+  loan_status : LoanStatus;
+  txn_id : text;
+  expires_at : nat64;
+  borrowed_amount : nat64;
+  collateral_id : text;
+};
+type Result = variant { Ok : record { text; text }; Err : text };
+type Result_1 = variant { Ok; Err : text };
+type Result_2 = variant { Ok : text; Err : text };
+type Result_3 = variant { Ok : nat; Err : text };
+type RuneData = record { id : nat; name : text };
+type TransformArgs = record { context : blob; response : HttpResponse };
 service : {
-    "greet": (text) -> (text) query;
+  btc_balance : (text) -> (nat64);
+  create_collateral : (Collateral) -> (Result);
+  create_liquidity_bundle : (Bundle) -> (Result);
+  create_loan_offer : (LoanOffer) -> (Result_1);
+  deposit_address : () -> (text);
+  export_candid : () -> (text) query;
+  get_bundle : (text) -> (opt Bundle) query;
+  get_colateral : (text) -> (opt Collateral) query;
+  get_loan : (LoanRequest) -> (Result_2);
+  get_loan_offers : (opt principal) -> (vec LoanOffer) query;
+  get_loan_transaction : (text) -> (opt LoanTransaction) query;
+  greet : (text) -> (text) query;
+  http_transform : (TransformArgs) -> (HttpResponse) query;
+  list_runes : () -> (vec RuneData) query;
+  pay_loan : (text) -> (Result);
+  register_rune : (text) -> (Result_3);
 }
