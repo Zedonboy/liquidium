@@ -12,9 +12,8 @@ type Collateral = record {
   loan_trx : opt text;
   address : text;
   txn_id : text;
-  trx_hex : opt text;
   amount : nat64;
-  rune_id : nat;
+  rune_id : text;
 };
 type HttpHeader = record { value : text; name : text };
 type HttpResponse = record {
@@ -26,11 +25,11 @@ type LoanOffer = record {
   id : text;
   interest : float32;
   term : nat32;
-  collateral : nat64;
+  collateral_amt : nat64;
   liquidity_bundle_id : text;
   lender : principal;
   max_ltv : float32;
-  rune_id : nat;
+  rune_id : text;
 };
 type LoanRequest = record {
   offer_id : text;
@@ -55,8 +54,6 @@ type LoanTransaction = record {
 type Result = variant { Ok : record { text; text }; Err : text };
 type Result_1 = variant { Ok; Err : text };
 type Result_2 = variant { Ok : text; Err : text };
-type Result_3 = variant { Ok : nat; Err : text };
-type RuneData = record { id : nat; name : text };
 type TransformArgs = record { context : blob; response : HttpResponse };
 service : {
   btc_balance : (text) -> (nat64);
@@ -72,7 +69,6 @@ service : {
   get_loan_transaction : (text) -> (opt LoanTransaction) query;
   greet : (text) -> (text) query;
   http_transform : (TransformArgs) -> (HttpResponse) query;
-  list_runes : () -> (vec RuneData) query;
   pay_loan : (text) -> (Result);
-  register_rune : (text) -> (Result_3);
+  test : (text) -> ();
 }

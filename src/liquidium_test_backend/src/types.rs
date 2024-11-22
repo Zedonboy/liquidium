@@ -28,8 +28,10 @@ pub struct OutpointData {
 
 impl OutpointData {
     pub fn from_utxo(utxo : &Utxo) -> Self {
+        let mut tx_vec = utxo.outpoint.txid.clone();
+        tx_vec.reverse();
         Self {
-            txn_id : hex::encode(utxo.outpoint.txid.clone()),
+            txn_id : hex::encode(&tx_vec),
             index: utxo.outpoint.vout,
             amount: utxo.value,
             height: utxo.height
@@ -72,7 +74,6 @@ impl ToString for RuneIdData {
 pub struct Collateral {
     pub id : String,
     pub rune_id: String,
-    pub trx_hex : Option<String>,
     pub amount: u64,
     pub owner : Principal,
     pub txn_id : String,

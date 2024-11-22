@@ -32,17 +32,13 @@ fn to_runeid(id: &str) -> RuneId {
 }
 
 pub struct RuneTransactionBuilder {
-    network: Network,
     dust_limit: Amount,
-    secp: Secp256k1<bitcoin::secp256k1::All>,
 }
 
 impl RuneTransactionBuilder {
-    pub fn new(network: Network) -> Self {
+    pub fn new() -> Self {
         Self {
-            network,
             dust_limit: Amount::from_sat(546),
-            secp: Secp256k1::new(),
         }
     }
 
@@ -52,12 +48,15 @@ impl RuneTransactionBuilder {
         params: &RuneTransferParams,
         utxos: &[Utxo],
         change_address: &Address,
+        total_edict_amt : u64
     ) -> Result<Transaction, Box<dyn std::error::Error>> {
         // Calculate total available input amount
         let total_input: Amount = utxos
             .iter()
             .map(|utxo| Amount::from_sat(utxo.value))
             .sum::<Amount>();
+
+        ic_cdk::println!("Input Utxo Total : {}", total_input);
 
         // Create inputs
         let inputs: Vec<TxIn> = utxos
@@ -76,14 +75,23 @@ impl RuneTransactionBuilder {
         // Create outputs
         // let mut outputs = Vec::new();
 
-        let edict = Edict {
-            id: to_runeid(&params.rune_id),
-            amount: params.amount as u128,
-            output: 0,
-        };
+        let edict_vec = vec![
+            
+            Edict {
+                id: to_runeid(&params.rune_id),
+                amount: total_edict_amt as u128 - params.amount as u128,   
+                output: 1,
+            },
+
+            Edict {
+                id: to_runeid(&params.rune_id),
+                amount: params.amount as u128,
+                output: 2,
+            }
+        ];
 
         let stone = Runestone {
-            edicts: vec![edict],
+            edicts: edict_vec,
             etching: None,
             mint: None,
             pointer: None,
@@ -91,11 +99,15 @@ impl RuneTransactionBuilder {
 
         let mut outputs_vec = vec![
             TxOut {
-                value: Amount::from_sat(546),
+                value: Amount::from_sat(0),
                 script_pubkey: stone.encipher(),
             },
+            TxOut{
+                value: Amount::from_sat(1000),
+                script_pubkey: change_address.script_pubkey()
+            },
             TxOut {
-                value: Amount::from_sat(0),
+                value: Amount::from_sat(1000),
                 script_pubkey: params.recipient_address.script_pubkey(),
             },
         ];
@@ -115,13 +127,17 @@ impl RuneTransactionBuilder {
 
         // Calculate approximate transaction size for fee
         let approx_tx_size = self.estimate_tx_size(inputs.len(), outputs_vec.len() + 1); // +1 for potential change
-        let fee_amount = Amount::from_sat((approx_tx_size as u64 * params.fee_rate) as u64);
+        let fee_amount = Amount::from_sat((approx_tx_size as u64 * params.fee_rate) / 1000);
 
+        ic_cdk::println!("Fee Amount : {}", fee_amount);
         // Calculate total output amount so far
         let output_amount = outputs_vec
             .iter()
             .map(|output| output.value)
             .sum::<Amount>();
+
+            ic_cdk::println!("Output Utxo Total : {}", output_amount);
+
 
         // Calculate change amount
         if let Some(change_amount) = total_input
@@ -129,6 +145,8 @@ impl RuneTransactionBuilder {
             .unwrap()
             .checked_sub(fee_amount)
         {
+
+            ic_cdk::println!("Change Utxo Total : {}", change_amount);
             // Only add change output if it's above dust limit
             if change_amount > self.dust_limit {
                 outputs_vec.push(TxOut {

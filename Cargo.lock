@@ -1624,15 +1624,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rune"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bitcoin",
- "hex",
-]
-
-[[package]]
 name = "rustc-demangle"
 version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"

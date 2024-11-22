@@ -16,7 +16,6 @@ use bitcoin_api::{
     transform_network,
 };
 use candid::{candid_method, Nat, Principal};
-use consts::rune_tx;
 use ecdsa_api::get_ecdsa_public_key;
 use ic_cdk::{
     api::{
@@ -32,15 +31,13 @@ use ic_cdk::{
             main::raw_rand,
         },
         time,
-    },
-    caller, query, update,
+    }, caller, println, query, update
 };
 use ordinals::{Artifact, Edict, Rune, Runestone};
 use p2pkh::{build_p2pkh_spend_tx, ecdsa_sign_transaction};
 use redblack::RedBlackTree;
 use rune_trx::{RuneTransactionBuilder, RuneTransferParams};
 use serde_json::{json, Value};
-mod consts;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use types::{
@@ -60,7 +57,7 @@ mod test;
 
 const RPC_USER: &str = "ic-btc-integration";
 const RPC_PASS: &str = "QPQiNaph19FqUsCrBRN0FII7lyM26B51fAMeBQzCb-E=";
-const BTC_RPC_URL: &str = "http://127.0.0.1:18444";
+const BTC_RPC_URL: &str = "http://127.0.0.1:18443";
 
 #[ic_cdk::query]
 fn greet(name: String) -> String {
@@ -170,7 +167,7 @@ pub async fn create_collateral(mut collateral: Collateral) -> Result<(String, St
     let minimum_dust = 1000;
     let mut total_value = 0u64;
     let mut sat_amount = 0u64;
-    let mut output_vec = vec![];
+   
     let mut checked_trx = HashSet::new();
 
     let (utxo_resp,) =
@@ -183,12 +180,13 @@ pub async fn create_collateral(mut collateral: Collateral) -> Result<(String, St
         .unwrap();
 
     // get utxos that contains runes
-    for utxo in utxo_resp.utxos {
-        let output_data = OutpointData::from_utxo(&utxo);
+    for utxo in &utxo_resp.utxos {
+        let utxo_value = utxo.value;
+        let output_data = OutpointData::from_utxo(utxo);
         if total_value >= collateral.amount {
             if sat_amount < minimum_dust {
-                sat_amount += utxo.value;
-                output_vec.push(utxo);
+                sat_amount += utxo_value;
+                // output_vec.push(utxo);
                 continue;
             }
             break;
@@ -196,16 +194,14 @@ pub async fn create_collateral(mut collateral: Collateral) -> Result<(String, St
 
         let txn_id = output_data.txn_id.clone();
 
+        ic_cdk::println!("Utxo Trx: {}", txn_id);
+
         // total_value += output_data.amount;
         if checked_trx.contains(&txn_id) {
             continue;
         }
 
-        let trx_hex = if collateral.trx_hex.is_some() {
-            collateral.trx_hex.clone().unwrap()
-        } else {
-            get_raw_transaction(&txn_id).await.unwrap()
-        };
+        let trx_hex = get_raw_transaction(&txn_id).await.unwrap();
         let trx: Transaction = deserialize_hex(&trx_hex).unwrap();
         checked_trx.insert(txn_id.clone());
         let artifact_opt = ordinals::Runestone::decipher(&trx);
@@ -224,7 +220,7 @@ pub async fn create_collateral(mut collateral: Collateral) -> Result<(String, St
                 total_value += edict.amount as u64
             }
         }
-        output_vec.push(utxo);
+        // output_vec.push(utxo);
     }
 
     if collateral.amount > total_value {
@@ -246,19 +242,19 @@ pub async fn create_collateral(mut collateral: Collateral) -> Result<(String, St
 
         rune_id: collateral.rune_id.clone()
     };
-    let rune_trx_builder = RuneTransactionBuilder::new(transform_network(BitcoinNetwork::Regtest));
+    let rune_trx_builder = RuneTransactionBuilder::new();
     let borrower_path = vec![caller().to_text().as_bytes().to_vec()];
     let user_address = get_btc_address(borrower_path.clone(), BitcoinNetwork::Regtest).await;
     let transaction = rune_trx_builder
-        .build_unsigned_transfer(&rune_params, &output_vec, &user_address)
+        .build_unsigned_transfer(&rune_params, &utxo_resp.utxos, &user_address, total_value)
         .await
         .unwrap();
 
     let borrower_pk = get_ecdsa_public_key(borrower_path.clone()).await.public_key;
-    let borrower_addr = get_btc_address(borrower_path.clone(), BitcoinNetwork::Regtest).await;
+    
     let signed = ecdsa_sign_transaction(
         &borrower_pk,
-        &borrower_addr,
+        &user_address,
         transaction,
         format!("dfx_test_key"),
         borrower_path,
@@ -567,7 +563,7 @@ async fn check_expired_loan() {
         let collateral = collateral_opt.unwrap();
 
         let rune_trx_builder =
-            RuneTransactionBuilder::new(transform_network(BitcoinNetwork::Regtest));
+            RuneTransactionBuilder::new();
 
         // let rune = rune_opt.unwrap();
         let fee_rate = get_fee_per_byte(BitcoinNetwork::Regtest).await;
@@ -597,7 +593,7 @@ async fn check_expired_loan() {
             .await
             .unwrap();
         let unsigned_trx_rslt = rune_trx_builder
-            .build_unsigned_transfer(&rune_params, &utxo_resp.utxos, &borrower_addr)
+            .build_unsigned_transfer(&rune_params, &utxo_resp.utxos, &borrower_addr, collateral.amount)
             .await;
         if unsigned_trx_rslt.is_err() {
             continue;
@@ -703,7 +699,7 @@ async fn pay_loan(loan_trx: String) -> Result<(String, String), String> {
     let signed_bytes = serialize(&signed_trx);
     send_transaction(BitcoinNetwork::Regtest, signed_bytes).await;
 
-    let rune_trx_builder = RuneTransactionBuilder::new(Network::Regtest);
+    let rune_trx_builder = RuneTransactionBuilder::new();
 
     let rune_param = RuneTransferParams {
         amount: collateral.amount,
@@ -721,7 +717,7 @@ async fn pay_loan(loan_trx: String) -> Result<(String, String), String> {
         .unwrap();
 
     let rune_trx = rune_trx_builder
-        .build_unsigned_transfer(&rune_param, &collateral_utxo_resp.utxos, &borrowe_btc_addr)
+        .build_unsigned_transfer(&rune_param, &collateral_utxo_resp.utxos, &borrowe_btc_addr, collateral.amount)
         .await
         .unwrap();
     let collateral_path = vec![hex::decode(&collateral.id).unwrap()];
@@ -827,6 +823,26 @@ fn parse_raw_tx_response(response: &HttpResponse) -> Result<String, String> {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .ok_or_else(|| "No result in response".to_string())
+}
+
+
+#[update]
+async fn test(txid : String) {
+    let trx_hex = get_raw_transaction(&txid).await.unwrap();
+    let trx : Transaction = deserialize_hex(&trx_hex).unwrap();
+    let artifact_opt = Runestone::decipher(&trx);
+    let a = artifact_opt.unwrap();
+    match a {
+    Artifact::Cenotaph(cenotaph) => {
+        println!("A centaph")
+    },
+    Artifact::Runestone(runestone) => {
+      for edict in runestone.edicts {
+          ic_cdk::println!("Rune Id: {}: amount: {}", edict.id.block, edict.amount)
+      }  
+    },
+        
+    }
 }
 
 #[query]
