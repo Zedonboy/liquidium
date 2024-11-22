@@ -44,6 +44,7 @@ use types::{
     Bundle, Collateral, ExpiryResource, LoanOffer, LoanRequest, LoanStatus, LoanTransaction,
     OutpointData, RuneIdData,
 };
+use utils::{json_to_transaction, validate_rune_transaction};
 
 mod bitcoin_api;
 mod ecdsa_api;
@@ -51,6 +52,7 @@ mod p2pkh;
 mod redblack;
 mod rune_trx;
 mod types;
+mod utils;
 
 #[cfg(test)]
 mod test;
@@ -342,7 +344,7 @@ pub async fn get_loan_offers(lender: Option<Principal>) -> Vec<LoanOffer> {
 
 #[update(guard = "is_not_anonymous")]
 async fn get_loan(request: LoanRequest) -> Result<String, String> {
-    let (term, rune_id, collateral_amt, bundle_id, ltv, interest, bundle, collateral) = COLLATERALS
+    let (offer, bundle, collateral) = COLLATERALS
         .with_borrow_mut(|store| {
             let collateral_opt = store.get_mut(&request.collateral_id);
             if collateral_opt.is_none() {
@@ -394,38 +396,41 @@ async fn get_loan(request: LoanRequest) -> Result<String, String> {
             })?;
 
             Ok((
-                offer.term,
-                collateral.rune_id.clone(),
-                collateral.amount,
-                offer.liquidity_bundle_id,
-                offer.max_ltv,
-                offer.interest,
+                offer,
                 bundle,
                 collateral.clone(),
             ))
         })?;
+    
 
     let current_time = nanoseconds_to_milliseconds(time());
-    let expiry = current_time + days_to_milliseconds(term as u64);
+    let expiry = current_time + days_to_milliseconds(offer.term as u64);
+    let json_trx = get_transaction_info(&collateral.txn_id).await?;
 
-    let sat_worth = get_rune_unit_price(rune_id).await.mul(collateral_amt);
-    let borrowed_amt = (sat_worth as f64).mul(ltv as f64).floor() as u64;
+    check_confirmation(&json_trx)?;
+
+    let trx = json_to_transaction(&json_trx)?;
+
+    validate_rune_transaction(&trx, &collateral.rune_id, collateral.amount as u128)?;
+
+    let sat_worth = get_rune_unit_price(collateral.rune_id).await.mul(collateral.amount);
+    let borrowed_amt = (sat_worth as f64).mul(offer.max_ltv as f64).floor() as u64;
     let (raw_byte,) = raw_rand().await.unwrap();
     let loan_trx_id = hex::encode(raw_byte);
 
     let mut loan_trx = LoanTransaction {
-        bundle_id,
+        bundle_id: bundle.id.clone(),
         collateral_id: request.collateral_id.clone(),
         owner: caller(),
         expires_at: expiry,
         sat_worth,
         id: loan_trx_id.clone(),
-        ltv: ltv as f64,
+        ltv: offer.max_ltv as f64,
         borrowed_amount: borrowed_amt,
         txn_id: format!(""),
         loan_status: types::LoanStatus::PENDING,
         created_at: current_time,
-        interest,
+        interest: offer.interest,
     };
 
     let loan_expiry = loan_trx.expires_at;
@@ -508,6 +513,20 @@ async fn btc_balance(address: String) -> u64 {
         .await
         .unwrap();
     return bal;
+}
+
+fn check_confirmation(tx_data: &Value) -> Result<(), String> {
+    // Check if blockhash exists (transaction is in a block)
+    if tx_data["blockhash"].is_null() {
+        return Err("Transaction not yet included in a block".to_string());
+    }
+
+    // Verify confirmations value exists and is greater than 0
+    match tx_data["confirmations"].as_u64() {
+        Some(confirms) if confirms > 0 => Ok(()),
+        Some(_) => Err("Transaction is in mempool".to_string()),
+        None => Err("Unable to get confirmation data".to_string()),
+    }
 }
 
 async fn check_expired_loan() {
@@ -795,6 +814,72 @@ async fn get_raw_transaction(txid: &str) -> Result<String, String> {
         .await
     {
         Ok((response,)) => parse_raw_tx_response(&response),
+        Err((_, m)) => Err(format!("HTTP request failed: {:?}", m)),
+    }
+}
+
+
+// Get raw transaction hex from Bitcoin RPC
+async fn get_transaction_info(txid: &str) -> Result<Value, String> {
+    let request_body = json!({
+        "jsonrpc": "2.0",
+        "id": "1",
+        "method": "getrawtransaction",
+        "params": [txid, true]  // true for verbose output
+    });
+
+    let auth = format!("{}:{}", RPC_USER, RPC_PASS);
+    let auth_header = format!("Basic {}", BASE64.encode(auth.as_bytes()));
+
+    let headers = vec![
+        HttpHeader {
+            name: "Content-Type".to_string(),
+            value: "application/json".to_string(),
+        },
+        HttpHeader {
+            name: "Authorization".to_string(),
+            value: auth_header,
+        },
+    ];
+
+    let request = CanisterHttpRequestArgument {
+        url: BTC_RPC_URL.to_string(),
+        method: HttpMethod::POST,
+        body: Some(request_body.to_string().into_bytes()),
+        max_response_bytes: Some(2048),
+        transform: Some(TransformContext::from_name(
+            "http_transform".to_string(),
+            vec![],
+        )),
+        headers,
+    };
+
+    match ic_cdk::api::management_canister::http_request::http_request(request, 10_000_000_000)
+        .await
+    {
+        Ok((response,)) => {
+            if response.status != Nat::from(200u32) {
+                return Err(format!("HTTP error: {}", response.status));
+            }
+
+            let response_body = String::from_utf8(response.body)
+                .map_err(|e| format!("Failed to parse response body: {}", e))?;
+
+            let json: Value = serde_json::from_str(&response_body)
+                .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+
+            // Check for RPC error
+            if let Some(error) = json.get("error") {
+                if !error.is_null() {
+                    return Err(format!("RPC error: {:?}", error));
+                }
+            }
+
+            // Get result
+            json.get("result")
+                .cloned()
+                .ok_or_else(|| "No result field in response".to_string())
+        }
         Err((_, m)) => Err(format!("HTTP request failed: {:?}", m)),
     }
 }
